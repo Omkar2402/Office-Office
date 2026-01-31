@@ -20,7 +20,26 @@ export default class TaskScene extends Phaser.Scene {
     // =========================
     // BASIC SETUP
     // =========================
-    this.cameras.main.setBackgroundColor("#1e1e1e");
+    // Set background to white
+    this.cameras.main.setBackgroundColor("#ffffff");
+
+    // Draw a simple tile pattern (light gray squares)
+    const tileSize = 60;
+    const cols = Math.ceil(this.cameras.main.width / tileSize);
+    const rows = Math.ceil(this.cameras.main.height / tileSize);
+    for (let i = 0; i < cols; i++) {
+      for (let j = 0; j < rows; j++) {
+        if ((i + j) % 2 === 0) {
+          this.add.rectangle(
+            i * tileSize + tileSize / 2,
+            j * tileSize + tileSize / 2,
+            tileSize,
+            tileSize,
+            0xf5f5f5
+          ).setDepth(-1);
+        }
+      }
+    }
 
     this.playerId = localStorage.getItem("officeoffice_playerId");
     this.playerName = localStorage.getItem("officeoffice_playerName");
@@ -38,10 +57,11 @@ export default class TaskScene extends Phaser.Scene {
     this.desks = [];
 
     DESKS.forEach(desk => {
-      const deskBox = this.add.rectangle(desk.x, desk.y, 120, 80, 0x2a2a2a);
+      // Brown color (hex: #8B5A2B)
+      const deskBox = this.add.rectangle(desk.x, desk.y, 120, 80, 0x8B5A2B);
       this.add.text(desk.x, desk.y - 40, `Desk ${desk.id}`, {
         fontSize: "12px",
-        color: "#aaaaaa"
+        color: "#006400" // Dark green
       }).setOrigin(0.5);
 
       this.desks.push({ ...desk, rect: deskBox });
