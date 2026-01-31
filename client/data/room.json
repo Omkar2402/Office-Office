@@ -1,0 +1,10 @@
+{
+  "rooms": {
+    "demo-room": {
+      "players": {},
+      "gameState": {
+        "phase": "LOBBY"
+      }
+    }
+  }
+}
