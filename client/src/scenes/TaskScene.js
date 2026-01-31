@@ -1,15 +1,5 @@
 import Phaser from "phaser";
-import { db, ref, onValue, set } from "../firebase";
-
-const ROOM_ID = "demo-room";
-
-// Desk positions (shared contract with backend)
-const DESKS = [
-  { id: 1, x: 200, y: 180 },
-  { id: 2, x: 600, y: 180 },
-  { id: 3, x: 200, y: 380 },
-  { id: 4, x: 600, y: 380 }
-];
+import { db, ref, onValue, update } from "../firebase";
 
 export default class TaskScene extends Phaser.Scene {
   constructor() {
@@ -17,172 +7,190 @@ export default class TaskScene extends Phaser.Scene {
   }
 
   create() {
-    // =========================
-    // BASIC SETUP
-    // =========================
-    // Set background to white
-    this.cameras.main.setBackgroundColor("#ffffff");
-
-    // Draw a simple tile pattern (light gray squares)
-    const tileSize = 60;
-    const cols = Math.ceil(this.cameras.main.width / tileSize);
-    const rows = Math.ceil(this.cameras.main.height / tileSize);
-    for (let i = 0; i < cols; i++) {
-      for (let j = 0; j < rows; j++) {
-        if ((i + j) % 2 === 0) {
-          this.add.rectangle(
-            i * tileSize + tileSize / 2,
-            j * tileSize + tileSize / 2,
-            tileSize,
-            tileSize,
-            0xf5f5f5
-          ).setDepth(-1);
-        }
-      }
-    }
-
+    /** ------------------------
+     * BASIC SETUP
+     * ------------------------ */
+    this.roomId = "demo-room";
     this.playerId = localStorage.getItem("officeoffice_playerId");
-    this.playerName = localStorage.getItem("officeoffice_playerName");
 
-    // Title
-    this.add.text(400, 20, "OFFICE FLOOR", {
+    this.cameras.main.setBackgroundColor("#1e1e1e");
+
+    this.add.text(400, 30, "OFFICE FLOOR", {
       fontSize: "24px",
-      color: "#f5c542",
+      color: "#ffffff",
       fontStyle: "bold"
     }).setOrigin(0.5);
 
-    // =========================
-    // DRAW DESKS
-    // =========================
-    this.desks = [];
+    /** ------------------------
+     * DESK DEFINITIONS
+     * ------------------------ */
+    this.desks = [
+      { id: "D1", x: 200, y: 200 },
+      { id: "D2", x: 600, y: 200 },
+      { id: "D3", x: 200, y: 420 },
+      { id: "D4", x: 600, y: 420 }
+    ];
 
-    DESKS.forEach(desk => {
-      // Brown color (hex: #8B5A2B)
-      const deskBox = this.add.rectangle(desk.x, desk.y, 120, 80, 0x8B5A2B);
-      this.add.text(desk.x, desk.y - 40, `Desk ${desk.id}`, {
-        fontSize: "12px",
-        color: "#006400" // Dark green
+    // Draw desks
+    this.desks.forEach(desk => {
+      const rect = this.add.rectangle(desk.x, desk.y, 140, 80, 0x3a3a3a);
+      rect.setStrokeStyle(2, 0xf5c542);
+
+      this.add.text(desk.x, desk.y - 55, `Desk ${desk.id}`, {
+        fontSize: "14px",
+        color: "#f5c542"
       }).setOrigin(0.5);
-
-      this.desks.push({ ...desk, rect: deskBox });
     });
 
-    // =========================
-    // PLAYER AVATAR
-    // =========================
-    this.player = this.add.rectangle(400, 520, 30, 30, 0x4aa3ff);
-    this.physics.add.existing(this.player);
-    this.player.body.setCollideWorldBounds(true);
+    /** ------------------------
+     * PLAYER STATE
+     * ------------------------ */
+    this.players = {};
+    this.myPlayer = null;
 
-    // =========================
-    // CONTROLS
-    // =========================
+    /** ------------------------
+     * INPUT
+     * ------------------------ */
     this.cursors = this.input.keyboard.createCursorKeys();
-    this.keyE = this.input.keyboard.addKey(
-      Phaser.Input.Keyboard.KeyCodes.E
-    );
+    this.keyE = this.input.keyboard.addKey("E");
 
-    // =========================
-    // UI TEXT
-    // =========================
+    /** ------------------------
+     * FIREBASE LISTENER
+     * ------------------------ */
+    const playersRef = ref(db, `rooms/${this.roomId}/players`);
+
+    onValue(playersRef, snapshot => {
+      const data = snapshot.val() || {};
+      this.syncPlayers(data);
+    });
+
+    /** ------------------------
+     * UI
+     * ------------------------ */
     this.hintText = this.add.text(400, 560, "", {
       fontSize: "14px",
-      color: "#ffffff"
+      color: "#00ff00"
     }).setOrigin(0.5);
+  }
 
-    // =========================
-    // FIREBASE: DESK ASSIGNMENT
-    // =========================
-    this.myDeskId = null;
+  /** ------------------------
+   * PLAYER SYNC
+   * ------------------------ */
+  syncPlayers(data) {
+    Object.entries(data).forEach(([id, player]) => {
+      if (!this.players[id]) {
+        // Assign desk based on join order
+        const deskIndex = Object.keys(this.players).length % this.desks.length;
+        const desk = this.desks[deskIndex];
 
-    const deskRef = ref(db, `rooms/${ROOM_ID}/players/${this.playerId}/deskId`);
-    onValue(deskRef, snap => {
-      this.myDeskId = snap.val();
-    });
+        const emoji = this.randomEmoji();
 
-    // =========================
-    // FIREBASE: POSITION SYNC
-    // =========================
-    this.posRef = ref(
-      db,
-      `rooms/${ROOM_ID}/players/${this.playerId}/pos`
-    );
+        const avatar = this.add.text(desk.x, desk.y + 10, emoji, {
+          fontSize: "32px"
+        }).setOrigin(0.5);
 
-    // Save position every 300ms
-    this.time.addEvent({
-      delay: 300,
-      loop: true,
-      callback: () => {
-        set(this.posRef, {
-          x: Math.round(this.player.x),
-          y: Math.round(this.player.y)
+        const label = this.add.text(desk.x, desk.y - 90, "", {
+          fontSize: "12px",
+          color: "#ffffff",
+          align: "center"
+        }).setOrigin(0.5);
+
+        this.players[id] = {
+          id,
+          name: player.name,
+          deskId: desk.id,
+          deskX: desk.x,
+          deskY: desk.y,
+          avatar,
+          label,
+          x: desk.x,
+          y: desk.y
+        };
+
+        // Save desk to DB once
+        update(ref(db, `rooms/${this.roomId}/players/${id}`), {
+          deskId: desk.id,
+          x: desk.x,
+          y: desk.y,
+          emoji
         });
+      }
+
+      // Update visuals
+      const p = this.players[id];
+      p.avatar.setPosition(player.x ?? p.x, player.y ?? p.y);
+      p.label.setText(`${player.name}\nDesk ${p.deskId}`);
+      p.label.setPosition(p.avatar.x, p.avatar.y - 45);
+
+      if (id === this.playerId) {
+        this.myPlayer = p;
       }
     });
   }
 
+  /** ------------------------
+   * UPDATE LOOP
+   * ------------------------ */
   update() {
-    if (!this.player.body) return;
+    if (!this.myPlayer) return;
 
-    // =========================
-    // PLAYER MOVEMENT
-    // =========================
-    const speed = 200;
-    this.player.body.setVelocity(0);
+    let moved = false;
+    const speed = 2;
 
     if (this.cursors.left.isDown) {
-      this.player.body.setVelocityX(-speed);
-    } else if (this.cursors.right.isDown) {
-      this.player.body.setVelocityX(speed);
+      this.myPlayer.avatar.x -= speed;
+      moved = true;
     }
-
+    if (this.cursors.right.isDown) {
+      this.myPlayer.avatar.x += speed;
+      moved = true;
+    }
     if (this.cursors.up.isDown) {
-      this.player.body.setVelocityY(-speed);
-    } else if (this.cursors.down.isDown) {
-      this.player.body.setVelocityY(speed);
+      this.myPlayer.avatar.y -= speed;
+      moved = true;
+    }
+    if (this.cursors.down.isDown) {
+      this.myPlayer.avatar.y += speed;
+      moved = true;
     }
 
-    // =========================
-    // DESK INTERACTION CHECK
-    // =========================
-    this.checkDeskProximity();
-  }
-
-  checkDeskProximity() {
-    if (!this.myDeskId) {
-      this.hintText.setText("Waiting for desk assignment...");
-      return;
+    if (moved) {
+      update(ref(db, `rooms/${this.roomId}/players/${this.playerId}`), {
+        x: this.myPlayer.avatar.x,
+        y: this.myPlayer.avatar.y
+      });
     }
 
-    const myDesk = this.desks.find(d => d.id === this.myDeskId);
-    if (!myDesk) return;
+    // Check distance to own desk
+    const dx = this.myPlayer.avatar.x - this.myPlayer.deskX;
+    const dy = this.myPlayer.avatar.y - this.myPlayer.deskY;
+    const distance = Math.sqrt(dx * dx + dy * dy);
 
-    const dist = Phaser.Math.Distance.Between(
-      this.player.x,
-      this.player.y,
-      myDesk.x,
-      myDesk.y
-    );
-
-    if (dist < 60) {
+    if (distance < 50) {
       this.hintText.setText("Press E to start working");
-
       if (Phaser.Input.Keyboard.JustDown(this.keyE)) {
-        this.startWorking();
+        this.startTask();
       }
     } else {
       this.hintText.setText("");
     }
   }
 
-  startWorking() {
-    // Visual feedback only (backend logic handled by Member B)
-    this.hintText.setText("💻 Working...");
-    this.player.setFillStyle(0x2ecc71);
+  /** ------------------------
+   * TASK START
+   * ------------------------ */
+  startTask() {
+    this.hintText.setText("📝 Task Started!");
+    console.log("Task started by", this.playerId);
 
-    set(
-      ref(db, `rooms/${ROOM_ID}/players/${this.playerId}/isWorking`),
-      true
-    );
+    // Later: open task UI / timer / submission
+  }
+
+  /** ------------------------
+   * HELPERS
+   * ------------------------ */
+  randomEmoji() {
+    const emojis = ["👩‍💻", "🧑‍💼", "👨‍💻", "🧑‍🔧", "👩‍🔧", "🧑‍🏫"];
+    return emojis[Math.floor(Math.random() * emojis.length)];
   }
 }
