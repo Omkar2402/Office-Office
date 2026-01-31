@@ -34,9 +34,13 @@ export default class RoleScene extends Phaser.Scene {
         roleText.setText("👤 GOOD EMPLOYEE\nDo your tasks honestly.");
       }
 
-      // Move to TaskScene after 3 sec
+      // Route to different scenes based on role
       this.time.delayedCall(3000, () => {
-        this.scene.start("TaskScene");
+        if (role === "FAKE") {
+          this.scene.start("StrategyScene");
+        } else {
+          this.scene.start("TaskScene");
+        }
         this.scene.stop();
       });
     }, { onlyOnce: true });

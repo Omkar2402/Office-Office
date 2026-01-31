@@ -96,19 +96,7 @@ def submit_tasks(data: dict):
 # ============================
 # AI EVALUATION
 # ============================
-@router.post("/ai/evaluate")
-def ai_eval(data: dict):
-    room = data["roomId"]
-    players = get_ref(f"rooms/{room}/tasks").get()
 
-    result = evaluate_players(players)
-
-    get_ref(f"rooms/{room}/gameState").update({
-        "phase": "VOTING",
-        "aiResult": result
-    })
-
-    return {"aiResult": result}
 
 
 @router.post("/ai/evaluate")
@@ -118,7 +106,10 @@ def ai_eval(data: dict):
     players_metrics = get_ref(f"rooms/{room}/metrics").get()
 
     if not players_metrics:
+        print("DEBUG: No metrics found in database!")
         return {"error": "No metrics found"}
+
+    print(f"DEBUG: Received Player Metrics: {players_metrics}")
 
     result = evaluate_players(players_metrics)
 
