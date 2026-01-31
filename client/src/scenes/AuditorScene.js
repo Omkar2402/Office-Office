@@ -55,58 +55,67 @@ export default class AuditorScene extends Phaser.Scene {
         let aiResult;
         try {
             aiResult = JSON.parse(aiResultJson);
+            if (!aiResult.players) throw new Error("Invalid AI format");
         } catch (e) {
             console.error("Failed to parse AI result:", e);
-            aiResult = { fakeEmployeeId: "unknown", reason: "Analysis failed", confidence: 0 };
+            aiResult = { players: {} };
         }
 
         console.log("AI Decision:", aiResult);
 
         // Clear loading animation
         this.tweens.killAll();
-
-        // Decision text
-        const decisionTitle = this.add.text(0, -80, "AI AUDITOR HAS DECIDED", {
-            fontSize: "24px",
-            color: "#fbbf24",
-            fontStyle: "bold"
-        }).setOrigin(0.5);
-
-        const suspectText = this.add.text(0, -20, `🎯 SUSPECT: Player ${aiResult.fakeEmployeeId}`, {
-            fontSize: "28px",
-            color: "#ef4444",
-            fontStyle: "bold"
-        }).setOrigin(0.5);
-
-        const reasonText = this.add.text(0, 30, `Reason: ${aiResult.reason}`, {
-            fontSize: "16px",
-            color: "#e2e8f0",
-            wordWrap: { width: 600 }
-        }).setOrigin(0.5);
-
-        const confidenceText = this.add.text(0, 70, `Confidence: ${Math.round((aiResult.confidence || 0.5) * 100)}%`, {
-            fontSize: "14px",
-            color: "#94a3b8",
-            fontStyle: "italic"
-        }).setOrigin(0.5);
-
-        // Instruction
-        const instructionText = this.add.text(0, 140, "Press ENTER to proceed to voting", {
-            fontSize: "18px",
-            color: "#22c55e"
-        }).setOrigin(0.5);
-
-        // Pulse animation
-        this.tweens.add({
-            targets: instructionText,
-            alpha: 0.5,
-            duration: 600,
-            yoyo: true,
-            repeat: -1
+        // Remove "analyzing" text if it's not part of container
+        this.children.list.forEach(child => {
+            if (child.text && child.text.includes("Analyzing")) child.destroy();
         });
 
-        // Add to container
-        this.decisionContainer.add([decisionTitle, suspectText, reasonText, confidenceText, instructionText]);
+        const decisionTitle = this.add.text(0, -150, "🤖 AI METRICS REPORT", {
+            fontSize: "28px", color: "#fbbf24", fontStyle: "bold"
+        }).setOrigin(0.5);
+        this.decisionContainer.add(decisionTitle);
+
+        // Display Scores
+        let yOffset = -100;
+        Object.entries(aiResult.players).forEach(([pid, data], index) => {
+            const score = data.fakenessScore || 0;
+            const barWidth = 400;
+            const filledWidth = barWidth * score;
+            const color = score > 0.7 ? 0xef4444 : (score > 0.4 ? 0xf59e0b : 0x22c55e);
+
+            // Name
+            const nameText = this.add.text(-200, yOffset, `Player ${pid}`, {
+                fontSize: "18px", color: "#ffffff"
+            }).setOrigin(0, 0.5);
+
+            // Bar Bg
+            const barBg = this.add.rectangle(0, yOffset + 25, barWidth, 10, 0x333333).setOrigin(0.5);
+            // Bar Fill
+            const barFill = this.add.rectangle(-200, yOffset + 25, filledWidth, 10, color).setOrigin(0, 0.5);
+
+            // Label
+            const scoreText = this.add.text(220, yOffset + 25, `${Math.round(score * 100)}% Fake`, {
+                fontSize: "14px", color: "#cccccc"
+            }).setOrigin(0, 0.5);
+
+            // Reason
+            const reasonText = this.add.text(0, yOffset + 45, data.reason, {
+                fontSize: "12px", color: "#94a3b8", fontStyle: "italic"
+            }).setOrigin(0.5);
+
+            this.decisionContainer.add([nameText, barBg, barFill, scoreText, reasonText]);
+            yOffset += 80;
+        });
+
+        // Instruction
+        const instructionText = this.add.text(0, 200, "Press ENTER to proceed to voting", {
+            fontSize: "18px", color: "#22c55e"
+        }).setOrigin(0.5);
+
+        this.tweens.add({
+            targets: instructionText, alpha: 0.5, duration: 600, yoyo: true, repeat: -1
+        });
+        this.decisionContainer.add(instructionText);
 
         // Fade in decision
         this.tweens.add({

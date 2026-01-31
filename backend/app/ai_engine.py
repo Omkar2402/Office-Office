@@ -41,62 +41,42 @@ def evaluate_players(players):
 
     # ---------- RULE BASED CHECK + BEHAVIORAL ANALYSIS ----------
     for pid, data in players.items():
-        accuracy = calculate_accuracy(
-            REAL_TASK_TEXT,
-            data.get("typedText", "")
-        )
-
-        # Metrics
+        # Metric Extraction
         idle_time = data.get("idleTime", 0)
-        fake_time = data.get("fakeTaskTime", 0)
-        switches = data.get("contextSwitchCount", 0)
-        fake_interactions = data.get("fakeInteractions", 0)
+        move_time = data.get("moveTime", 0)
+        real_work_time = data.get("realWorkTime", 0)
+        fake_work_time = data.get("fakeWorkTime", 0)
+        interruptions = data.get("interruptions", 0)
         
-        # Behavioral data
-        time_to_start = data.get("timeToStart", 0)
-        typing_rhythm = data.get("typingRhythm", {})
-        rhythm_variance = typing_rhythm.get("variance", 999)
+        # Derived Metrics
+        total_time = idle_time + move_time + real_work_time + fake_work_time
+        work_ratio = (real_work_time + fake_work_time) / (total_time or 1)
         
         # BEHAVIORAL FLAGS
-        # 1. "Too Perfect" Detection
-        too_perfect = accuracy > 0.95 and rhythm_variance < 100
+        # 1. Obvious Fake: Working on unassigned tasks
+        fake_working = fake_work_time > 1.0  # Tolerance for mis-clicks
         
-        # 2. Suspicious Start (hesitation before committing)
-        suspicious_start = time_to_start > 3000  # >3s delay
+        # 2. Suspicious Wandering: Moving/Idle too much without working
+        slacking = work_ratio < 0.3
         
-        # 3. Unnatural consistency (robot-like typing)
-        too_consistent = rhythm_variance < 50 and typing_rhythm.get("count", 0) > 10
+        # 3. Hesitation: Many interruptions (starting/stopping work)
+        hesitant = interruptions > 3
         
-        # 4. Any fake task interaction reveals intent
-        touched_fake_task = fake_time > 0 or fake_interactions > 0
-
-        # Traditional suspicious flags
-        traditional_suspicious = (
-            accuracy < 0.5 or
-            idle_time > 20 or
-            fake_time > 15
-        )
-        
-        # Combined suspicion
-        suspicious = traditional_suspicious or too_perfect or touched_fake_task
+        # 4. "Too Perfect": No idle time, perfect efficiency (might be a bot/hard-try fake)
+        robot_like = idle_time < 1.0 and interruptions == 0
 
         rule_flags[pid] = {
-            "accuracy": round(accuracy, 2),
-            "timeTakenMs": data.get("timeTakenMs"),
-            "idleTime": idle_time,
-            "fakeTaskTime": fake_time,
-            "contextSwitches": switches,
-            "fakeInteractions": fake_interactions,
-            "suspicious": suspicious
+            "realWorkAndFakeWork": f"{round(real_work_time,1)}s / {round(fake_work_time,1)}s",
+            "idleAndMove": f"{round(idle_time,1)}s / {round(move_time,1)}s",
+            "interruptions": interruptions,
+            "workRatio": round(work_ratio, 2)
         }
         
         behavioral_flags[pid] = {
-            "timeToStart": time_to_start,
-            "typingRhythmVariance": rhythm_variance,
-            "tooPerfect": too_perfect,
-            "tooConsistent": too_consistent,
-            "suspiciousStart": suspicious_start,
-            "touchedFakeTask": touched_fake_task
+            "fakeWorking": fake_working,
+            "slacking": slacking,
+            "hesitant": hesitant,
+            "robotLike": robot_like
         }
 
     print(f"DEBUG: Rule Flags: {rule_flags}")
@@ -104,43 +84,34 @@ def evaluate_players(players):
 
     # ---------- AI REASONING WITH BEHAVIORAL CONTEXT ----------
     prompt = f"""
-You are an AI auditor in 'Office Office' detecting a FAKE employee among GOOD ones.
+You are an AI auditor in 'Office Office' detecting FAKE employees.
+Analyze the following player metrics to assign a 'fakenessScore' to EACH player.
 
 METRICS DATA:
 {rule_flags}
 
-BEHAVIORAL PATTERNS:
+BEHAVIORAL FLAGS:
 {behavioral_flags}
 
-DETECTION FRAMEWORK:
+DETECTION LOGIC:
+1. HIGH FAKENESS (>0.8):
+   - Any significant 'fakeWorkTime' (working at unassigned desks).
+   - High hesitation (interruptions) combined with low real work.
 
-1. OBVIOUS FAKE (High Confidence):
-   - Low accuracy (<50%) + high fake task time (>15s)
-   - High idle time (>20s) + barely any typing
-   - Touched fake task for >10s
+2. MEDIUM FAKENESS (0.4 - 0.7):
+   - Slacking (low work ratio) or excessive wandering.
+   - erratic behavior or trying to look busy without progress.
 
-2. "TOO PERFECT" FAKE (Medium Confidence):
-   - Accuracy >95% with unnatural typing rhythm (variance <100)
-   - Suspiciously consistent keystrokes (variance <50, acting like a robot)
-   - Delayed start (>3s hesitation) then perfect execution
+3. LOW FAKENESS (<0.3):
+   - Consistent 'realWorkTime'.
+   - Reasonable idle/move times (natural behavior).
 
-3. GENUINELY GOOD (Exclude):
-   - 80-95% accuracy with natural typing variance (100-500)
-   - Started quickly (<2s)
-   - Zero fake task interaction
-   - Natural rhythm with mistakes/corrections
-
-CRITICAL RULES:
-- ANY fake task interaction (even 1s) proves FAKE intent
-- Being "too perfect" is MORE suspicious than having typos
-- Humans have typing variance 100-500ms; <50 is robot-like
-- FAKE players on "Perfect Cover" strategy try too hard to be perfect
-
-Return JSON:
+Return JSON format:
 {{
-  "fakeEmployeeId": "<playerId>",
-  "reason": "<brief detection method (1 sentence)>",
-  "confidence": <0.0-1.0>
+  "players": {{
+    "<playerId>": {{ "fakenessScore": <0.0-1.0>, "reason": "<short explanation>" }},
+    ...
+  }}
 }}
 """
 
@@ -156,43 +127,30 @@ Return JSON:
         print(f"⚠️ OpenAI API Error: {e}")
         print("📌 Using fallback rule-based detection...")
         
-        # Fallback: Rule-based detection with randomness for game balance
-        most_suspicious_id = None
-        max_suspicion = 0
+        # Fallback: Simple Rule Based
+        fallback_result = {}
         
-        for pid, flags in rule_flags.items():
-            # Calculate suspicion score
-            score = 0
-            if flags["suspicious"]:
-                score += 50
-            if behavioral_flags[pid]["touchedFakeTask"]:
-                score += 30
-            if behavioral_flags[pid]["tooPerfect"]:
-                score += 20
+        for pid, flags in behavioral_flags.items():
+            score = 0.1
+            reason = "Normal behavior"
             
-            # Add random noise (±10 points) to make AI fallible
-            import random
-            score += random.randint(-10, 10)
-            
-            if score > max_suspicion:
-                max_suspicion = score
-                most_suspicious_id = pid
-        
-        # Determine reason
-        b_flags = behavioral_flags.get(most_suspicious_id, {})
-        if b_flags.get("touchedFakeTask"):
-            reason = "Interacted with fake task (rule-based detection)"
-        elif b_flags.get("tooPerfect"):
-            reason = "Too perfect typing pattern (rule-based detection)"
-        else:
-            reason = "Suspicious metrics detected (rule-based detection)"
-        
-        # Vary confidence based on score (60-85%)
-        confidence = min(0.85, max(0.55, max_suspicion / 100))
+            if flags["fakeWorking"]:
+                score = 0.9
+                reason = "Interacted with unassigned tasks (Fake Work)"
+            elif flags["slacking"]:
+                score = 0.6
+                reason = "Low work output and high wandering"
+            elif flags["hesitant"]:
+                score = 0.5
+                reason = "High hesitation/interruptions"
+            elif flags["robotLike"]:
+                score = 0.4
+                reason = "Suspiciously mechanical efficiency"
+                
+            fallback_result[pid] = {
+                "fakenessScore": score,
+                "reason": reason + " (fallback)"
+            }
         
         import json
-        return json.dumps({
-            "fakeEmployeeId": most_suspicious_id or "unknown",
-            "reason": reason,
-            "confidence": round(confidence, 2)
-        })
+        return json.dumps({"players": fallback_result})

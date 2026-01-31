@@ -88,6 +88,49 @@ export default class TaskScene extends Phaser.Scene {
     });
 
     this.ensureLocalPlayer();
+
+    // UI Rectangle (Bottom Right)
+    const cam = this.cameras.main;
+    this.add.rectangle(cam.width - 150, cam.height - 100, 300, 200, 0x111111)
+      .setScrollFactor(0)
+      .setDepth(100);
+
+    this.taskDisplay = this.add.text(cam.width - 280, cam.height - 180, "Loading...", {
+      fontSize: "18px", fill: "#ffffff", wordWrap: { width: 280 }
+    }).setScrollFactor(0).setDepth(101);
+
+    // Fetch Role & Assign Task
+    const roleRef = ref(db, `rooms/${this.roomId}/players/${this.playerId}/role`);
+    onValue(roleRef, (snap) => {
+      const role = snap.val();
+      if (role) {
+        const fakeTasks = [{ "type": "printer", "task": "Go to printer and print document" }];
+        const goodTasks = [{ "type": "desk", "task": "Go to desk 1 and upload file" }];
+
+        const tasks = (role === "FAKE" ? fakeTasks : goodTasks);
+        const myTask = tasks.map(t => t.task).join('\n');
+        this.currentTaskTypes = tasks.map(t => t.type);
+
+        this.taskDisplay.setText(`ROLE: ${role}\nYOUR TASK: ${myTask}`);
+        update(ref(db, `rooms/${this.roomId}/players/${this.playerId}`), {
+          tasks: this.currentTaskTypes
+        });
+
+      }
+    });
+
+    // Start Task Timer (2 Minutes)
+    this.timeLeft = 120;
+    this.timerText = this.add.text(cam.width - 280, 80, "⏱️ 2:00", {
+      fontSize: "24px", color: "#ffcc00", fontStyle: "bold"
+    }).setScrollFactor(0).setDepth(101);
+
+    this.timerEvent = this.time.addEvent({
+      delay: 1000,
+      callback: this.onTimerTick,
+      callbackScope: this,
+      loop: true
+    });
   }
 
   ensureLocalPlayer() {
@@ -107,6 +150,28 @@ export default class TaskScene extends Phaser.Scene {
   createDeskZones() {
     this.deskZones = this.physics.add.staticGroup();
     this.desks.forEach(desk => {
+      this.add.text(
+        this.mapOffsetX + desk.laptopX * this.mapScale,
+        this.mapOffsetY + desk.laptopY * this.mapScale - 40 * this.mapScale,
+        `Desk ${desk.id}`,
+        { fontSize: '14px', fill: '#00000' }
+      ).setOrigin(0.5);
+
+      this.printerZone = this.add.rectangle(
+        this.mapOffsetX + 600 * this.mapScale, // Printer X
+        this.mapOffsetY + 150 * this.mapScale, // Printer Y
+        80 * this.mapScale, 60 * this.mapScale, 0x0000ff, 0.2
+      );
+      this.physics.add.existing(this.printerZone, true);
+      this.deskZones.add(this.printerZone); // Treat as collidable/zone
+
+      this.add.text(
+        this.printerZone.x,
+        this.printerZone.y - 40 * this.mapScale,
+        "Printer",
+        { fontSize: '14px', fill: '#000000' }
+      ).setOrigin(0.5);
+
       const screenX = this.mapOffsetX + desk.laptopX * this.mapScale;
       const screenY = this.mapOffsetY + desk.laptopY * this.mapScale;
 
@@ -207,13 +272,15 @@ export default class TaskScene extends Phaser.Scene {
     const body = this.myPlayer.sprite.body;
     body.setVelocity(0);
 
-    if (this.cursors.left.isDown) body.setVelocityX(-speed);
-    else if (this.cursors.right.isDown) body.setVelocityX(speed);
+    let isMoving = false;
+    if (this.cursors.left.isDown) { body.setVelocityX(-speed); isMoving = true; }
+    else if (this.cursors.right.isDown) { body.setVelocityX(speed); isMoving = true; }
 
-    if (this.cursors.up.isDown) body.setVelocityY(-speed);
-    else if (this.cursors.down.isDown) body.setVelocityY(speed);
+    if (this.cursors.up.isDown) { body.setVelocityY(-speed); isMoving = true; }
+    else if (this.cursors.down.isDown) { body.setVelocityY(speed); isMoving = true; }
 
-    this.checkDeskInteraction();
+    this.checkInteraction();
+    this.updateMetrics(isMoving);
 
     if (!this.lastSync || Date.now() - this.lastSync > 100) {
       update(ref(db, `rooms/${this.roomId}/players/${this.playerId}`), {
@@ -224,29 +291,171 @@ export default class TaskScene extends Phaser.Scene {
     }
   }
 
-  checkDeskInteraction() {
-    if (!this.myPlayer || !this.myPlayer.desk) return;
-    const dx = this.myPlayer.sprite.x - this.myPlayer.desk.screenSpawnX;
-    const dy = this.myPlayer.sprite.y - this.myPlayer.desk.screenSpawnY;
-    if (Math.sqrt(dx * dx + dy * dy) < 60) {
-      this.instructionsText.setText("Press E to Work");
-      if (Phaser.Input.Keyboard.JustDown(this.keyE)) this.scene.start("WorkScene");
+  updateMetrics(isMoving) {
+    if (!this.metrics) {
+      this.metrics = {
+        idleTime: 0,
+        moveTime: 0,
+        realWorkTime: 0,
+        fakeWorkTime: 0,
+        interruptions: 0
+      };
+      this.lastMetricTime = Date.now();
+    }
+
+    const dt = (Date.now() - this.lastMetricTime) / 1000;
+    this.lastMetricTime = Date.now();
+
+    if (isMoving) {
+      this.metrics.moveTime += dt;
+    } else if (this.isWorking) {
+      // Work time tracked in checkInteraction
+    } else {
+      this.metrics.idleTime += dt;
+    }
+
+    // Sync metrics occasionally (every 2s) to avoid spamming
+    if (!this.lastMetricSync || Date.now() - this.lastMetricSync > 2000) {
+      const metricRef = ref(db, `rooms/${this.roomId}/metrics/${this.playerId}`);
+      update(metricRef, this.metrics);
+      this.lastMetricSync = Date.now();
+    }
+  }
+
+  checkInteraction() {
+    if (!this.myPlayer || !this.currentTaskTypes) return;
+
+    let canInteract = false;
+    let instruction = "";
+    this.interactingWith = null;
+    let isZoneValid = false; // Is this zone ASSIGNED to me?
+
+    // Check ALL Desks (fake employees can use any)
+    this.desks.forEach(desk => {
+      const dx = this.myPlayer.sprite.x - desk.screenSpawnX;
+      const dy = this.myPlayer.sprite.y - desk.screenSpawnY;
+      if (Math.sqrt(dx * dx + dy * dy) < 60) {
+        canInteract = true;
+        this.interactingWith = `desk_${desk.id}`;
+        // Check if this specific desk is assigned
+        if (this.myPlayer.desk && this.myPlayer.desk.id === desk.id && this.currentTaskTypes.includes("desk")) {
+          isZoneValid = true;
+        }
+      }
+    });
+
+    // Check Printer
+    if (!canInteract && this.printerZone) {
+      const pdx = this.myPlayer.sprite.x - this.printerZone.x;
+      const pdy = this.myPlayer.sprite.y - this.printerZone.y;
+      if (Math.sqrt(pdx * pdx + pdy * pdy) < 60) {
+        canInteract = true;
+        this.interactingWith = "printer";
+        if (this.currentTaskTypes.includes("printer")) {
+          isZoneValid = true;
+        }
+      }
+    }
+
+    if (canInteract) {
+      instruction = isZoneValid ? `Hold E to Work (${this.interactingWith})` : "Hold E to Fake Work";
+      this.instructionsText.setText(instruction);
+
+      if (!this.keyE) this.keyE = this.input.keyboard.addKey('E');
+
+      if (this.keyE.isDown) {
+        this.isWorking = true;
+        const dt = 1 / 60; // Approx frame time
+
+        if (isZoneValid) {
+          this.metrics.realWorkTime += dt;
+          this.taskProgress = (this.taskProgress || 0) + 1;
+        } else {
+          this.metrics.fakeWorkTime += dt;
+          // Fake progress bar also moves to fool others
+          this.taskProgress = (this.taskProgress || 0) + 1;
+        }
+
+        // Draw Progress Bar
+        if (!this.progressBar) this.progressBar = this.add.graphics().setDepth(20);
+        this.progressBar.clear()
+          .fillStyle(0x000000, 0.5)
+          .fillRect(this.myPlayer.sprite.x - 30, this.myPlayer.sprite.y - 50, 60, 10)
+          .fillStyle(isZoneValid ? 0x00ff00 : 0xff0000) // Red for fake, Green for real (Maybe keep green to trick others? - Let's use Green for both visually)
+          .fillStyle(0x00ff00)
+          .fillRect(this.myPlayer.sprite.x - 30, this.myPlayer.sprite.y - 50, (this.taskProgress / 100) * 60, 10);
+
+        if (this.taskProgress >= 100) {
+          if (isZoneValid) {
+            update(ref(db, `rooms/${this.roomId}/players/${this.playerId}`), {
+              submitted: true // Mark as done only if REAL task
+            });
+            this.instructionsText.setText("Task Submitted!");
+            this.isWorking = false;
+            this.keyE.isDown = false;
+          } else {
+            // Fake complete - reset but don't submit
+            this.taskProgress = 0;
+            this.progressBar.clear();
+          }
+        }
+      } else {
+        // Key Released
+        if (this.isWorking) {
+          this.metrics.interruptions++;
+          this.isWorking = false;
+        }
+        if (this.taskProgress > 0) {
+          this.taskProgress = 0;
+          if (this.progressBar) this.progressBar.clear();
+        }
+      }
     } else {
       this.instructionsText.setText("Arrow keys to move");
+      this.isWorking = false;
+      if (this.taskProgress > 0) {
+        this.taskProgress = 0;
+        if (this.progressBar) this.progressBar.clear();
+      }
     }
+  }
+
+
+  onTimerTick() {
+    if (this.timeLeft > 0) {
+      this.timeLeft--;
+      const minutes = Math.floor(this.timeLeft / 60);
+      const seconds = this.timeLeft % 60;
+      this.timerText.setText(`⏱️ ${minutes}:${seconds < 10 ? '0' : ''}${seconds}`);
+    } else {
+      // Time's up! Force end.
+      this.forceEndRound();
+    }
+  }
+
+  forceEndRound() {
+    if (this.transitioningToAuditor) return;
+    this.transitioningToAuditor = true;
+    this.instructionsText.setText("TIME'S UP! Analyzing...");
+
+    // Stop timer
+    if (this.timerEvent) this.timerEvent.remove(false);
+
+    // Trigger AI Evaluation
+    fetch("http://localhost:8000/ai/evaluate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ roomId: this.roomId })
+    }).then(() => {
+      this.time.delayedCall(1000, () => this.scene.start("AuditorScene"));
+    });
   }
 
   checkAllSubmitted(data) {
     const list = Object.values(data);
+    // Auto-end if ALL submitted, OR if generic check
     if (list.length > 0 && list.every(p => p.submitted) && !this.transitioningToAuditor) {
-      this.transitioningToAuditor = true;
-      fetch("http://localhost:8000/ai/evaluate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ roomId: this.roomId })
-      }).then(() => {
-        this.time.delayedCall(1000, () => this.scene.start("AuditorScene"));
-      });
+      this.forceEndRound();
     }
   }
 }

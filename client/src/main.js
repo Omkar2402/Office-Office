@@ -28,7 +28,7 @@ const config = {
   height: window.innerHeight,
   backgroundColor: "#1e1e1e",
   parent: "game-container",
-  scene: [LobbyScene, TaskScene, RoleScene, WorkScene,StrategyScene,AuditorScene, VotingScene, ResultScene],
+  scene: [LobbyScene, TaskScene, RoleScene, WorkScene,AuditorScene, VotingScene, ResultScene],
   scale: {
     mode: Phaser.Scale.RESIZE,
     autoCenter: Phaser.Scale.CENTER_BOTH
