@@ -37,6 +37,7 @@ export default class RoleScene extends Phaser.Scene {
       // Move to TaskScene after 3 sec
       this.time.delayedCall(3000, () => {
         this.scene.start("TaskScene");
+        this.scene.stop();
       });
     }, { onlyOnce: true });
   }

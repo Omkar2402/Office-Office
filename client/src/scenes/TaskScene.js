@@ -174,6 +174,10 @@ export default class TaskScene extends Phaser.Scene {
     } else {
       this.hintText.setText("");
     }
+
+    if (Phaser.Input.Keyboard.JustDown(this.keyE) && this.nearDesk) {
+      this.scene.start("WorkScene");
+    }
   }
 
   /** ------------------------
@@ -182,7 +186,7 @@ export default class TaskScene extends Phaser.Scene {
   startTask() {
     this.hintText.setText("📝 Task Started!");
     console.log("Task started by", this.playerId);
-
+    this.scene.start("WorkScene");
     // Later: open task UI / timer / submission
   }
 
