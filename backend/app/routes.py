@@ -110,6 +110,26 @@ def ai_eval(data: dict):
 
     return {"aiResult": result}
 
+
+@router.post("/ai/evaluate")
+def ai_eval(data: dict):
+    room = data["roomId"]
+
+    players_metrics = get_ref(f"rooms/{room}/metrics").get()
+
+    if not players_metrics:
+        return {"error": "No metrics found"}
+
+    result = evaluate_players(players_metrics)
+
+    get_ref(f"rooms/{room}/gameState").update({
+        "phase": "VOTING",
+        "aiResult": result
+    })
+
+    return {"aiResult": result}
+
+
 # ============================
 # FIREBASE TEST
 # ============================
