@@ -56,6 +56,7 @@ export default class LobbyScene extends Phaser.Scene {
             // If playerId is still null, generate a new one and add
             if (!playerId) {
                 playerId = 'player_' + Math.random().toString(36).substr(2, 9);
+                localStorage.setItem("officeoffice_playerId", playerId);
                 set(ref(db, `rooms/${roomId}/players/${playerId}`), {
                     name: playerName
                 });
@@ -63,24 +64,28 @@ export default class LobbyScene extends Phaser.Scene {
         };
 
         const assignHostIfNeeded = () => {
-  onValue(roomRef, snap => {
-    const room = snap.val();
-    if (!room?.hostId) {
-      set(ref(db, `rooms/${roomId}/hostId`), playerId);
-    }
-  }, { onlyOnce: true });
-};
+            onValue(roomRef, snap => {
+                const room = snap.val();
+                if (!room?.hostId) {
+                    set(ref(db, `rooms/${roomId}/hostId`), playerId);
+                }
+            }, { onlyOnce: true });
+        };
         // Try to find existing player by name
         onValue(playersRef, snapshot => {
             const players = snapshot.val() || {};
-            // Try to find a player with the same name
+
             for (const [id, player] of Object.entries(players)) {
                 if (player.name === playerName) {
                     playerId = id;
+
+                    // 🔥 ADD THIS LINE
+                    localStorage.setItem("officeoffice_playerId", playerId);
+
                     break;
                 }
             }
-            // If not found, add to DB
+
             if (!playerId) {
                 addPlayerToDB();
                 assignHostIfNeeded();
@@ -89,11 +94,11 @@ export default class LobbyScene extends Phaser.Scene {
 
         let isHost = false;
 
-onValue(ref(db, `rooms/${roomId}/hostId`), snap => {
-  isHost = snap.val() === playerId;
-  startBtnBg.setVisible(isHost);
-  startBtnText.setVisible(isHost);
-});
+        onValue(ref(db, `rooms/${roomId}/hostId`), snap => {
+            isHost = snap.val() === playerId;
+            startBtnBg.setVisible(isHost);
+            startBtnText.setVisible(isHost);
+        });
         // Show player count and list inside the rectangle (centered vertically)
         let count = 0;
         this.countText = this.add.text(400, 220, `Employees (${count}/8)`, {
@@ -133,7 +138,7 @@ onValue(ref(db, `rooms/${roomId}/hostId`), snap => {
 
         startBtnText.setInteractive();
         startBtnText.on("pointerdown", () => {
-             if (!isHost) return;
+            if (!isHost) return;
             startGame(roomId);
         });
 
@@ -149,15 +154,17 @@ onValue(ref(db, `rooms/${roomId}/hostId`), snap => {
         // (moved above)
 
 
-        // (Already set above, remove duplicate)
+        // (Already set above, remove durplicate)
 
         const phaseRef = ref(db, `rooms/${roomId}/gameState/phase`);
 
-        onValue(phaseRef, snapshot => {
-            if (snapshot.val() === "TASK") {
-                this.scene.start("TaskScene");
+        onValue(phaseRef, snap => {
+            if (snap.val() === "ROLE_REVEAL") {
+                this.scene.stop("LobbyScene");
+                this.scene.start("RoleScene");
             }
         });
+
 
     }
 }

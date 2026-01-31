@@ -4,6 +4,7 @@ import LobbyScene from "./scenes/LobbyScene";
 import TaskScene from "./scenes/TaskScene";
 import VotingScene from "./scenes/VotingScene";
 import ResultScene from "./scenes/ResultScene";
+import RoleScene from "./scenes/RoleScene";
 
 class GameScene extends Phaser.Scene {
   constructor() {
@@ -24,7 +25,7 @@ const config = {
   width: window.innerWidth,
   height: window.innerHeight,
   backgroundColor: "#1e1e1e",
-  scene: [LobbyScene, TaskScene],
+  scene: [LobbyScene, TaskScene, RoleScene],
   scale: {
     mode: Phaser.Scale.RESIZE,
     autoCenter: Phaser.Scale.CENTER_BOTH

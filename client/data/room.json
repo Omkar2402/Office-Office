@@ -2,6 +2,7 @@
   "rooms": {
     "demo-room": {
       "players": {},
+      "hostId":"",
       "gameState": {
         "phase": "LOBBY"
       }
