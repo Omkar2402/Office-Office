@@ -3,7 +3,13 @@ from openai import OpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+# Configure for FastRouter
+client = OpenAI(
+    api_key=os.getenv("FASTROUTER_API_KEY"),
+    base_url="https://fastrouter.ai/api/v1"
+)
+MODEL_NAME = os.getenv("AI_MODEL_NAME", "deepseek/deepseek-r1")
 
 REAL_TASK_TEXT = "We delivered the project on time"
 
@@ -117,7 +123,7 @@ Return JSON format:
 
     try:
         res = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"}
         )

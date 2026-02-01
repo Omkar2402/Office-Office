@@ -1,5 +1,11 @@
 {
   "rooms": {
+    "ok-room": {
+      "players": {},
+      "gameState": {
+        "phase": "WAITING"
+      }
+    },
     "demo-room": {
       "players": {},
       "gameState": {
