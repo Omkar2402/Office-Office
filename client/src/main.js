@@ -1,13 +1,10 @@
 import Phaser from "phaser";
 import { startGame } from "./api";
 import LobbyScene from "./scenes/LobbyScene";
-import TaskScene from "./scenes/TaskScene";
-import VotingScene from "./scenes/VotingScene";
-import ResultScene from "./scenes/ResultScene";
 import RoleScene from "./scenes/RoleScene";
-import WorkScene from "./scenes/WorkScene";
-import StrategyScene from "./scenes/StrategyScene";
+import ResultScene from "./scenes/ResultScene";
 import AuditorScene from "./scenes/AuditorScene";
+import TaskScene from "./scenes/TaskScene";
 class GameScene extends Phaser.Scene {
   constructor() {
     super("GameScene");
@@ -18,7 +15,7 @@ class GameScene extends Phaser.Scene {
     this.add.text(100, 100, "Office Office Game");
 
     // 🔥 CALL BACKEND WHEN GAME STARTS
-    startGame("demo-room");
+    startGame("ok-room");
   }
 }
 
@@ -28,7 +25,7 @@ const config = {
   height: window.innerHeight,
   backgroundColor: "#1e1e1e",
   parent: "game-container",
-  scene: [LobbyScene, TaskScene, RoleScene, WorkScene,AuditorScene, VotingScene, ResultScene],
+  scene: [LobbyScene, TaskScene,RoleScene,AuditorScene, ResultScene],
   scale: {
     mode: Phaser.Scale.RESIZE,
     autoCenter: Phaser.Scale.CENTER_BOTH
